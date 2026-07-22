@@ -1,0 +1,132 @@
+<!--
+  HOLIWOOD REVIEWS WIDGET
+  ------------------------
+  Paste this into your Shopify product page template using the theme
+  editor's "Custom Liquid" section (instructions will follow once your
+  API is deployed). Before pasting, replace YOUR-VERCEL-URL below with
+  your real deployed URL, e.g. https://holiwood-reviews.vercel.app
+-->
+
+<div id="holiwood-reviews-widget" data-product-id="{{ product.id }}"></div>
+
+<script>
+(function () {
+  var API_BASE = "https://YOUR-VERCEL-URL"; // <-- replace this after deploying
+  var container = document.getElementById("holiwood-reviews-widget");
+  var productId = container.getAttribute("data-product-id");
+
+  function star(n) {
+    return "★".repeat(n) + "☆".repeat(5 - n);
+  }
+
+  function renderReviews(reviews) {
+    if (reviews.length === 0) {
+      return "<p>No reviews yet. Be the first!</p>";
+    }
+    return reviews
+      .map(function (r) {
+        var images = (r.image_urls || [])
+          .map(function (url) {
+            return '<img src="' + url + '" style="width:70px;height:70px;object-fit:cover;border-radius:6px;margin-right:6px;" />';
+          })
+          .join("");
+        return (
+          '<div style="border-bottom:1px solid #eee;padding:14px 0;">' +
+          '<strong>' + r.customer_name + '</strong> — <span>' + star(r.rating) + '</span>' +
+          '<p style="margin:6px 0;">' + r.review_text + '</p>' +
+          (images ? '<div style="margin-top:6px;">' + images + '</div>' : '') +
+          '</div>'
+        );
+      })
+      .join("");
+  }
+
+  function renderForm() {
+    return (
+      '<h3 style="margin-top:24px;">Write a review</h3>' +
+      '<form id="holiwood-review-form">' +
+      '<input name="customer_name" placeholder="Your name" required style="display:block;width:100%;margin-bottom:8px;padding:8px;" />' +
+      '<input name="customer_email" type="email" placeholder="Your email (optional)" style="display:block;width:100%;margin-bottom:8px;padding:8px;" />' +
+      '<select name="rating" required style="display:block;margin-bottom:8px;padding:8px;">' +
+      '<option value="">Rating</option>' +
+      '<option value="5">★★★★★</option><option value="4">★★★★☆</option>' +
+      '<option value="3">★★★☆☆</option><option value="2">★★☆☆☆</option>' +
+      '<option value="1">★☆☆☆☆</option>' +
+      '</select>' +
+      '<textarea name="review_text" placeholder="Your review" required style="display:block;width:100%;margin-bottom:8px;padding:8px;min-height:80px;"></textarea>' +
+      '<input name="images" type="file" accept="image/*" multiple style="display:block;margin-bottom:8px;" />' +
+      '<button type="submit" style="padding:10px 20px;">Submit Review</button>' +
+      '<p id="holiwood-review-status" style="margin-top:8px;"></p>' +
+      "</form>"
+    );
+  }
+
+  function fileToBase64(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () {
+        resolve(reader.result.split(",")[1]);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // Load approved reviews
+  fetch(API_BASE + "/api/reviews?product_id=" + encodeURIComponent(productId))
+    .then(function (res) {
+      return res.json();
+    })
+    .then(function (data) {
+      container.innerHTML =
+        "<h2>Customer Reviews</h2>" + renderReviews(data.reviews || []) + renderForm();
+      attachFormHandler();
+    });
+
+  function attachFormHandler() {
+    var form = document.getElementById("holiwood-review-form");
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var status = document.getElementById("holiwood-review-status");
+      status.textContent = "Submitting...";
+
+      var formData = new FormData(form);
+      var files = formData.getAll("images").filter(function (f) {
+        return f && f.size > 0;
+      });
+
+      Promise.all(
+        files.map(function (f) {
+          return fileToBase64(f).then(function (base64) {
+            return { name: f.name, base64: base64 };
+          });
+        })
+      ).then(function (images) {
+        fetch(API_BASE + "/api/reviews", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            product_id: productId,
+            product_title: document.title,
+            customer_name: formData.get("customer_name"),
+            customer_email: formData.get("customer_email"),
+            rating: parseInt(formData.get("rating"), 10),
+            review_text: formData.get("review_text"),
+            images: images,
+          }),
+        })
+          .then(function (res) {
+            return res.json();
+          })
+          .then(function () {
+            status.textContent = "Thanks! Your review will appear once approved.";
+            form.reset();
+          })
+          .catch(function () {
+            status.textContent = "Something went wrong. Please try again.";
+          });
+      });
+    });
+  }
+})();
+</script>
